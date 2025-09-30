@@ -243,7 +243,7 @@ export default function App() {
   const [flipped, setFlipped] = useState(false);
 
   // 2D / 3D toggle
-  const [useThree, setUseThree] = useState(false);
+  const [useThree, setUseThree] = useState(true);
 
   // Setup overlay state
   const [showSetup, setShowSetup] = useState(true);
