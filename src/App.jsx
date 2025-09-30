@@ -32,7 +32,7 @@ const moveKey = (m) =>
  * - Backward: step-down only (no across, no climb).
  * - Empty: you may step-down only to empty by −1 or −2 height.
  * - Own colour: Across only (equal height). No +1 climb.
- * - Opponent: Capture only if you are strictly taller by 1–2 (destination lower).
+ * - Opponent: Cross only if you are strictly taller by 1–2 (destination lower).
  * - Orthogonal only; only top block moves; origin shrinks, destination grows.
  */
 function moveKind(board, color, src, dst) {
@@ -46,14 +46,14 @@ function moveKind(board, color, src, dst) {
   const hSrc = height(board, sr, sc);
   const hDst = height(board, dr, dc);
   const topDst = topColor(board, dr, dc);
-  const delta = hDst - hSrc; // >0 "climb", 0 across, <0 step-down
+  const delta = hDst - hSrc; // >0 would be "climb", 0 across, <0 step-down
 
   const movingBackward = dr - sr === -forwardDir(color);
   if (movingBackward && delta >= 0) return null; // backward only step-down
 
   // Step-down (empty or any colour) only if -1 or -2
   if (delta === -1 || delta === -2) {
-    return topDst && topDst !== color ? "Capture" : "StepDown";
+    return topDst && topDst !== color ? "Cross" : "StepDown";
   }
 
   // Cannot move onto empty if not stepping down
@@ -139,7 +139,7 @@ function orderMoves(board, color, moves, avoidKey) {
     .map((m) => {
       const key = moveKey(m);
       let w = 0;
-      if (m.kind === "Capture") w += 50;
+      if (m.kind === "Cross") w += 50;
       if (m.kind === "StepDown") w += 10;
       const dr = m.dst[0] - m.src[0];
       if ((color === "R" && dr > 0) || (color === "B" && dr < 0)) w += 8;
@@ -168,8 +168,7 @@ function pickGreedy(board, color, avoidKey) {
   const ordered = orderMoves(board, color, moves, avoidKey);
   for (const m of ordered) {
     const nb = applyMove(board, m);
-    const penalty = avoidKey && moveKey(m) === avoidKey ? 15 : 0;
-    const s = evaluate(nb) - (color === "R" ? penalty : -penalty);
+    const s = evaluate(nb) - (avoidKey && moveKey(m) === avoidKey ? 15 : 0);
     if (color === "R" ? s > bestScore : s < bestScore) {
       bestScore = s;
       best = m;
@@ -195,8 +194,7 @@ function minimax(board, color, depth, alpha, beta, avoidKey) {
     for (const m of ordered) {
       const nb = applyMove(board, m);
       const res = minimax(nb, "B", depth - 1, alpha, beta, null);
-      const penalty = avoidKey && moveKey(m) === avoidKey ? 15 : 0;
-      const s = res.score - penalty;
+      const s = res.score - (avoidKey && moveKey(m) === avoidKey ? 15 : 0);
       if (s > best) {
         best = s;
         bestMove = m;
@@ -210,8 +208,7 @@ function minimax(board, color, depth, alpha, beta, avoidKey) {
     for (const m of ordered) {
       const nb = applyMove(board, m);
       const res = minimax(nb, "R", depth - 1, alpha, beta, null);
-      const penalty = avoidKey && moveKey(m) === avoidKey ? 15 : 0;
-      const s = res.score + penalty;
+      const s = res.score + (avoidKey && moveKey(m) === avoidKey ? 15 : 0);
       if (s < best) {
         best = s;
         bestMove = m;
@@ -242,8 +239,8 @@ export default function App() {
   const [rotY, setRotY] = useState(0); // 2D rotate
   const [flipped, setFlipped] = useState(false);
 
-  // 2D / 3D toggle
-  const [useThree, setUseThree] = useState(true);
+  // 2D / 3D toggle — default 3D
+  const [useThree, setUseThree] = useState(true); // <<< set 3D >>>
 
   // Setup overlay state
   const [showSetup, setShowSetup] = useState(true);
@@ -261,9 +258,6 @@ export default function App() {
     B: { endpoints: null, lastDir: null, pairs: 0 },
   });
   const [repWin, setRepWin] = useState(null); // "R" | "B" | null
-
-  // NEW: Rules modal
-  const [showRules, setShowRules] = useState(false);
 
   const aiColor = humanColor === "R" ? "B" : "R";
   const aiTurn = mode === "AI" && toMove === aiColor;
@@ -296,7 +290,7 @@ export default function App() {
     setSelected(null);
     setHistory([]);
     setFlipped(false);
-    setUseThree(false);
+    setUseThree(true); // <<< set 3D >>>
     setShowSetup(true);
     setBounce({
       R: { endpoints: null, lastDir: null, pairs: 0 },
@@ -326,6 +320,7 @@ export default function App() {
       B: { endpoints: null, lastDir: null, pairs: 0 },
     });
     setRepWin(null);
+    setUseThree(true); // <<< set 3D >>>
     setFlipped(setupMode === "AI" && setupHumanColor === "B");
   }
 
@@ -339,6 +334,7 @@ export default function App() {
       B: { endpoints: null, lastDir: null, pairs: 0 },
     });
     setRepWin(null);
+    setUseThree(true); // <<< set 3D >>>
   }
   function swapTurn() {
     setToMove((t) => (t === "R" ? "B" : "R"));
@@ -358,7 +354,7 @@ export default function App() {
   function updateBounce(mover, src, dst) {
     const a = sqKey(src[0], src[1]);
     const b = sqKey(dst[0], dst[1]);
-    const dir = a < b ? 1 : -1; // just a consistent direction flag
+    const dir = a < b ? 1 : -1; // consistent direction flag
     const ep = [a, b].sort().join("|");
 
     setBounce((prev) => {
@@ -449,7 +445,8 @@ export default function App() {
         setToMove(color === "R" ? "B" : "R");
         return;
       }
-      const avoidKey = null; // ordering penalty already discourages repeats
+      const aiPrev = bounce[color]; // avoid bouncing
+      const avoidKey = aiPrev?.endpoints ? null : null;
 
       let move = null;
       if (aiLevel === "RANDOM") move = pickRandom(moves, avoidKey);
@@ -463,29 +460,14 @@ export default function App() {
     }, 220);
 
     return () => clearTimeout(t);
-  }, [aiTurn, aiLevel, aiColor, board, status, showSetup]); // eslint-disable-line
+  }, [aiTurn, aiLevel, aiColor, board, status, showSetup, bounce]); // eslint-disable-line
 
   /* ================== UI ================== */
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 px-4 py-6">
       <div className="max-w-6xl mx-auto grid lg:grid-cols-[1fr_380px] gap-6 items-start">
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h1 className="text-2xl font-semibold">STRATOS — Play Test</h1>
-            {/* Info button (always available) */}
-            <button
-              onClick={() => setShowRules(true)}
-              className="ml-2 inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700"
-              title="Rules of Play"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M12 2a10 10 0 1 1 0 20a10 10 0 0 1 0-20Zm1 15v-6h-2v6h2Zm0-8V7h-2v2h2Z"
-                />
-              </svg>
-            </button>
-          </div>
+          <h1 className="text-2xl font-semibold mb-3">STRATOS — Play Test</h1>
 
           <div className="mb-3 flex flex-wrap gap-3 items-center">
             <div className="flex items-center gap-2">
@@ -876,16 +858,7 @@ export default function App() {
             </div>
 
             <hr className="my-4 border-slate-700" />
-            <h3 className="font-semibold flex items-center gap-2">
-              Rule Reminders
-              <button
-                onClick={() => setShowRules(true)}
-                className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs"
-                title="Open Rules"
-              >
-                i
-              </button>
-            </h3>
+            <h3 className="font-semibold">Rule Reminders</h3>
             <ul className="mt-1 text-sm text-slate-300 list-disc pl-5 space-y-1">
               <li>
                 <b>Across</b>: own colour, equal height only.
@@ -894,7 +867,7 @@ export default function App() {
                 <b>Step-Down</b>: any/empty, −1 or −2 only (backward allowed).
               </li>
               <li>
-                <b>Capture</b>: opponent only, strictly taller by 1–2.
+                <b>Cross</b>: opponent only, strictly taller by 1–2.
               </li>
               <li>
                 <b>Backward</b>: step-down only (no across/climb).
@@ -913,21 +886,7 @@ export default function App() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="relative z-10 w-[min(92vw,640px)] rounded-3xl border border-slate-700 bg-slate-900/95 p-8 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">New Game Setup</h2>
-              <button
-                onClick={() => setShowRules(true)}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700"
-                title="Rules of Play"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M12 2a10 10 0 1 1 0 20a10 10 0 0 1 0-20Zm1 15v-6h-2v6h2Zm0-8V7h-2v2h2Z"
-                  />
-                </svg>
-              </button>
-            </div>
+            <h2 className="text-2xl font-bold mb-4">New Game Setup</h2>
 
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-3">
@@ -1035,68 +994,6 @@ export default function App() {
               same piece back and forth A↔B three times (3 pairs) across your
               turns, you lose immediately.
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* Rules Modal (available always) */}
-      {showRules && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowRules(false)}
-          />
-          <div className="relative z-10 w-[min(92vw,680px)] max-h-[85vh] overflow-auto rounded-3xl border border-slate-700 bg-slate-900/95 p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xl font-bold">Rules of Play — STRATOS</h3>
-              <button
-                onClick={() => setShowRules(false)}
-                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-3 text-slate-200 text-sm leading-6">
-              <p>
-                <b>Goal:</b> Reach the opponent’s back row with one of your
-                blocks (Crossing), or win by Lockout (opponent has no legal
-                move), or by Repetition (same piece bounces between two squares
-                A↔B three times across your turns).
-              </p>
-
-              <p>
-                <b>Movement:</b> Only the top block of a tower moves, one square
-                orthogonally (no diagonals). When it moves, the origin tower
-                shrinks by 1 and the destination grows by 1 with the mover on
-                top. Empty squares are height 0.
-              </p>
-
-              <ul className="list-disc pl-5 space-y-1">
-                <li>
-                  <b>Across (own colour):</b> move onto your own tower of{" "}
-                  <i>equal height</i>. Forward/sideways only. No backward.
-                </li>
-                <li>
-                  <b>Step-Down (any/empty):</b> destination is 1–2 lower (Δ =
-                  −1/−2). Allowed forward, sideways, or backward. You may step
-                  into empty if it’s within −1/−2.
-                </li>
-                <li>
-                  <b>Capture (opponent):</b> you are strictly taller by 1–2; you
-                  move on top and seize control.
-                </li>
-                <li>
-                  <b>Backward restriction:</b> backward moves must be Step-Down
-                  only (no backward across/climb).
-                </li>
-              </ul>
-
-              <p className="text-slate-300">
-                <b>Turn order:</b> Red moves first. Passing is not allowed if
-                you have a legal move.
-              </p>
-            </div>
           </div>
         </div>
       )}
