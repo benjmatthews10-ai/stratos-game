@@ -467,7 +467,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 px-4 py-6">
       <div className="max-w-6xl mx-auto grid lg:grid-cols-[1fr_380px] gap-6 items-start">
         <div>
-          <h1 className="text-2xl font-semibold mb-3">STRATOS — Play Test</h1>
+          <h1 className="text-2xl font-semibold mb-3">TURRIM — Play Test</h1>
 
           <div className="mb-3 flex flex-wrap gap-3 items-center">
             <div className="flex items-center gap-2">
